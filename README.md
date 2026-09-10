@@ -4,10 +4,11 @@ A Python simulation project that models a single-server bank queue and uses repe
 
 [![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Matplotlib](https://img.shields.io/badge/Matplotlib-Visualization-11557C)](https://matplotlib.org/)
+[![CI](https://github.com/rrstii/Monte-Carlo-Project/actions/workflows/ci.yml/badge.svg)](https://github.com/rrstii/Monte-Carlo-Project/actions/workflows/ci.yml)
 
 ## Project Overview
 
-The simulation models a simple stochastic queue in which customers arrive randomly and are served by one teller. It then repeats the experiment to examine how the average waiting time changes across independent trials.
+The simulation models a simple stochastic queue in which customers arrive randomly and are served by one teller. It then repeats the experiment to examine how the average waiting time varies across trials.
 
 The model uses:
 
@@ -26,7 +27,7 @@ start_time = max(arrival_time, teller_free_time)
 wait_time  = start_time - arrival_time
 ```
 
-This produces a sequence of individual waiting times. The repeated simulations are then used to visualize the distribution of the resulting average waiting time.
+The implementation exposes reusable functions for generating arrivals, simulating one queue, summarizing waiting times, and running repeated Monte Carlo trials.
 
 ## Outputs
 
@@ -35,7 +36,7 @@ A single run reports:
 - Average waiting time
 - Maximum waiting time
 - Number of customers who had to wait
-- Average waiting time across 200 trials
+- Average waiting time across the Monte Carlo trials
 
 The program also generates:
 
@@ -52,10 +53,22 @@ cd Monte-Carlo-Project
 pip install -r requirements.txt
 ```
 
+For development and tests:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 ## Usage
 
 ```bash
 python queue_sim.py
+```
+
+Run the test suite with:
+
+```bash
+python -m pytest -q
 ```
 
 ## Project Structure
@@ -63,16 +76,21 @@ python queue_sim.py
 ```text
 Monte-Carlo-Project/
 ├── queue_sim.py
+├── tests/
+│   └── test_queue_sim.py
 ├── Q_RM.md
 ├── requirements.txt
+├── requirements-dev.txt
 ├── wait_times.png
 ├── monte_carlo_result.png
+├── .gitignore
+├── .github/workflows/ci.yml
 └── README.md
 ```
 
 ## Parameters
 
-The experiment can be adjusted directly in `queue_sim.py`:
+The experiment can be adjusted through the `QueueConfig` dataclass and Monte Carlo function in `queue_sim.py`:
 
 | Parameter | Default |
 | --- | ---: |
@@ -83,7 +101,7 @@ The experiment can be adjusted directly in `queue_sim.py`:
 
 ## Why Monte Carlo?
 
-A single random simulation gives only one possible outcome. Repeating the experiment many times makes it possible to examine the variability of the system and the distribution of average waiting times rather than relying on one run.
+A single random simulation gives only one possible outcome. Repeating the experiment makes it possible to examine variability and the distribution of average waiting times rather than relying on one run.
 
 ## Limitations and Next Steps
 
