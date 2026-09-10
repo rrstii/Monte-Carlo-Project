@@ -1,92 +1,152 @@
+"""Monte Carlo simulation of a single-server bank queue."""
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Tuple
 import random
+
 import matplotlib.pyplot as plt
 
-# simple simulation of a bank with one teller
-# customers arrive randomly and wait in line if the teller is busy
-
-random.seed(3)
-
+RANDOM_SEED = 3
 NUM_CUSTOMERS = 100
-AVG_ARRIVAL_GAP = 4   # minutes between customers on average
-AVG_SERVICE_TIME = 3  # minutes to serve one customer on average
+AVG_ARRIVAL_GAP = 4.0
+AVG_SERVICE_TIME = 3.0
+NUM_TRIALS = 200
+WAIT_TIMES_PLOT = Path("wait_times.png")
+MONTE_CARLO_PLOT = Path("monte_carlo_result.png")
 
-arrival_times = []
-current_time = 0
 
-for i in range(NUM_CUSTOMERS):
-    gap = random.expovariate(1 / AVG_ARRIVAL_GAP)
-    current_time += gap
-    arrival_times.append(current_time)
+@dataclass(frozen=True)
+class QueueConfig:
+    """Configuration for a queue simulation."""
 
-service_times = [random.expovariate(1 / AVG_SERVICE_TIME) for i in range(NUM_CUSTOMERS)]
+    num_customers: int = NUM_CUSTOMERS
+    avg_arrival_gap: float = AVG_ARRIVAL_GAP
+    avg_service_time: float = AVG_SERVICE_TIME
 
-# now simulate the teller, one customer at a time
-start_times = []
-end_times = []
-wait_times = []
+    def validate(self) -> None:
+        """Validate simulation parameters."""
+        if self.num_customers <= 0:
+            raise ValueError("num_customers must be greater than 0")
+        if self.avg_arrival_gap <= 0:
+            raise ValueError("avg_arrival_gap must be greater than 0")
+        if self.avg_service_time <= 0:
+            raise ValueError("avg_service_time must be greater than 0")
 
-teller_free_at = 0
 
-for i in range(NUM_CUSTOMERS):
-    arrival = arrival_times[i]
+def generate_arrival_times(config: QueueConfig, rng: random.Random) -> List[float]:
+    """Generate cumulative Poisson-process arrival times."""
+    current_time = 0.0
+    arrivals: List[float] = []
 
-    # customer starts either when they arrive, or when teller is free, whichever is later
-    start = max(arrival, teller_free_at)
-    end = start + service_times[i]
+    for _ in range(config.num_customers):
+        current_time += rng.expovariate(1 / config.avg_arrival_gap)
+        arrivals.append(current_time)
 
-    wait = start - arrival
+    return arrivals
 
-    start_times.append(start)
-    end_times.append(end)
-    wait_times.append(wait)
 
-    teller_free_at = end
+def simulate_queue(config: QueueConfig, rng: random.Random) -> Tuple[List[float], List[float], List[float]]:
+    """Simulate one bank queue and return starts, ends, and waits."""
+    config.validate()
+    arrivals = generate_arrival_times(config, rng)
+    service_times = [rng.expovariate(1 / config.avg_service_time) for _ in arrivals]
 
-avg_wait = sum(wait_times) / len(wait_times)
-max_wait = max(wait_times)
-num_waited = sum(1 for w in wait_times if w > 0)
+    start_times: List[float] = []
+    end_times: List[float] = []
+    wait_times: List[float] = []
+    teller_free_at = 0.0
 
-print(f"average wait time: {avg_wait:.2f} minutes")
-print(f"longest wait: {max_wait:.2f} minutes")
-print(f"{num_waited} out of {NUM_CUSTOMERS} customers had to wait")
+    for arrival, service_time in zip(arrivals, service_times):
+        start = max(arrival, teller_free_at)
+        end = start + service_time
 
-# quick plot of wait times per customer
-plt.figure(figsize=(9,5))
-plt.bar(range(NUM_CUSTOMERS), wait_times)
-plt.xlabel("customer number")
-plt.ylabel("wait time (minutes)")
-plt.title("wait time for each customer")
-plt.savefig("wait_times.png")
-print("saved chart as wait_times.png")
+        start_times.append(start)
+        end_times.append(end)
+        wait_times.append(start - arrival)
+        teller_free_at = end
 
-# also try running it a bunch of times to see how avg wait changes
-# this is basically the monte carlo part, running the sim many times
-all_avg_waits = []
+    return start_times, end_times, wait_times
 
-for trial in range(200):
-    t_time = 0
-    teller_free = 0
-    waits = []
 
-    for i in range(NUM_CUSTOMERS):
-        gap = random.expovariate(1 / AVG_ARRIVAL_GAP)
-        t_time += gap
-        service = random.expovariate(1 / AVG_SERVICE_TIME)
+def summarize_waits(wait_times: List[float]) -> dict:
+    """Return the main waiting-time statistics."""
+    if not wait_times:
+        raise ValueError("wait_times must not be empty")
 
-        start = max(t_time, teller_free)
-        wait = start - t_time
-        waits.append(wait)
-        teller_free = start + service
+    return {
+        "average_wait": sum(wait_times) / len(wait_times),
+        "max_wait": max(wait_times),
+        "num_waited": sum(wait > 0 for wait in wait_times),
+    }
 
-    all_avg_waits.append(sum(waits) / len(waits))
 
-print(f"\nran {len(all_avg_waits)} simulations")
-print(f"average wait across all simulations: {sum(all_avg_waits)/len(all_avg_waits):.2f} minutes")
+def run_monte_carlo(
+    config: QueueConfig = QueueConfig(),
+    trials: int = NUM_TRIALS,
+    seed: int = RANDOM_SEED,
+) -> List[float]:
+    """Run repeated queue simulations and return the mean wait of each trial."""
+    if trials <= 0:
+        raise ValueError("trials must be greater than 0")
 
-plt.figure(figsize=(9,5))
-plt.hist(all_avg_waits, bins=20)
-plt.xlabel("average wait time (minutes)")
-plt.ylabel("number of simulations")
-plt.title("distribution of average wait time over 200 simulations")
-plt.savefig("monte_carlo_result.png")
-print("saved chart as monte_carlo_result.png")
+    rng = random.Random(seed)
+    average_waits: List[float] = []
+
+    for _ in range(trials):
+        _, _, wait_times = simulate_queue(config, rng)
+        average_waits.append(summarize_waits(wait_times)["average_wait"])
+
+    return average_waits
+
+
+def plot_wait_times(wait_times: List[float], output_path: Path = WAIT_TIMES_PLOT) -> None:
+    """Save wait time for each customer."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.figure(figsize=(9, 5))
+    plt.bar(range(1, len(wait_times) + 1), wait_times)
+    plt.xlabel("Customer number")
+    plt.ylabel("Wait time (minutes)")
+    plt.title("Customer Wait Times")
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    plt.close()
+
+
+def plot_monte_carlo(average_waits: List[float], output_path: Path = MONTE_CARLO_PLOT) -> None:
+    """Save the distribution of average wait times across trials."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.figure(figsize=(9, 5))
+    plt.hist(average_waits, bins=20)
+    plt.xlabel("Average wait time (minutes)")
+    plt.ylabel("Number of simulations")
+    plt.title(f"Distribution of Average Wait Time Over {len(average_waits)} Simulations")
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    plt.close()
+
+
+def main() -> None:
+    """Run one simulation, generate plots, and run the Monte Carlo experiment."""
+    config = QueueConfig()
+    _, _, wait_times = simulate_queue(config, random.Random(RANDOM_SEED))
+    summary = summarize_waits(wait_times)
+
+    print(f"Average wait time: {summary['average_wait']:.2f} minutes")
+    print(f"Longest wait: {summary['max_wait']:.2f} minutes")
+    print(f"{summary['num_waited']} out of {config.num_customers} customers had to wait")
+
+    plot_wait_times(wait_times)
+    print(f"Saved chart as {WAIT_TIMES_PLOT}")
+
+    average_waits = run_monte_carlo(config)
+    overall_average = sum(average_waits) / len(average_waits)
+    print(f"\nRan {len(average_waits)} simulations")
+    print(f"Average wait across all simulations: {overall_average:.2f} minutes")
+
+    plot_monte_carlo(average_waits)
+    print(f"Saved chart as {MONTE_CARLO_PLOT}")
+
+
+if __name__ == "__main__":
+    main()
